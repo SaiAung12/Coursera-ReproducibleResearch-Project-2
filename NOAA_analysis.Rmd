@@ -1,0 +1,268 @@
+---
+title: "NOAA Storm Database Analysis on Impact of Storm Events on Health and Economic Damage"
+author: "Sai Thu Ya Aung"
+date: "8/14/2021"
+output: html_document
+---
+
+## Synopsis
+This report is submitted by Sai Thu Ya Aung for Reproducible Research course.
+
+The report is about analysis on NOAA database that how storms and certain weather events can damage public health and economy. The impact on public healh is analysed with fatalities and injuries counts, and that of on economy is analysed based on property and crop damage.
+
+The results of the analysis contain 10 weather events that cuased most damaging on public health and economy.
+
+## Data Processing 
+
+### Load required packages
+```{r}
+library(ggplot2)
+library(gridExtra)
+```
+
+### Download and load the NOAA data
+```{r, include=TRUE}
+if(!file.exists("./dataset")){dir.create("./dataset")}
+downloadUrl <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file(downloadUrl, destfile = "./dataset/StormData.csv.bz2") 
+
+storm_data <- read.table("./dataset/StormData.csv.bz2", sep = ",", header = TRUE, na.strings = "")
+
+str(storm_data)
+```
+
+### Create new storm data with only required variables
+
+* `EVTYPE`: Event type
+* `FATALITIES`: Number of fatalities
+* `INJURIES`: Number of injuries
+* `PROPDMG`: Property damage count
+* `PROPDMGEXP`: Property damage unit
+* `CROPDMG`: Crop damage count
+* `CROPDMGEXP`: Crop damage unit
+
+```{r, echo = TRUE}
+new_storm_data <- storm_data[, c("EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP", "CROPDMG", "CROPDMGEXP")]
+```
+
+### Check is there any NA
+```{r, echo = TRUE}
+apply(new_storm_data, 2, function(x) any(is.na(x)))
+```
+
+### Handle NAs and convert crop and property damage unit
+
+Unit indicator    | Description                       |Replaced by
+------------------|-----------------------------------|-----------------------------
+NA                | Undefined                         | 0
+h/H               | Hundred                           | 100
+K                 | Kilo                              | 1000
+m/M               | Million                           | 1,000,000
+B                 | Billion                           | 1,000,000,000
+1, 2, ..., 8      | Decimal Unit                      | Left unchanged
+0                 | Unclear                           | 0
++                 | Unclear                           | 0
+-                 | Unclear                           | 0 
+
+In this case, we left out NAs and unclear units by replacing with zero and work only with accurate data.
+
+### Create a new column with converted unit for crop damage
+```{r, cache = TRUE}
+for(i in 1:nrow(new_storm_data)) {
+        index_unit <- 0
+        if(!is.na(new_storm_data$CROPDMGEXP[i])) {
+                temp <- tolower(new_storm_data$CROPDMGEXP[i])
+                if (grepl("h", temp) == TRUE) {
+                        index_unit <- 100
+                } else if (grepl("k", temp) == TRUE) {
+                        index_unit <- 1000
+                } else if (grepl("m", temp) == TRUE) {
+                        index_unit <- 1000000
+                } else if (grepl("b", temp) == TRUE) {
+                        index_unit <- 1000000000
+                } else if (grepl("^[+-]", temp) == TRUE) {
+                        index_unit <- 0
+                } else {
+                        index_unit <- strtoi(temp)
+                }
+        }
+        new_storm_data$crop_dmg_unit[i] <- index_unit
+}
+```
+
+### Create a new column with converted unit for property damage
+```{r, cache = TRUE}
+for(i in 1:nrow(new_storm_data)) {
+        index_unit <- 0
+        if(!is.na(new_storm_data$PROPDMGEXP[i])) {
+                temp <- tolower(new_storm_data$PROPDMGEXP[i])
+                if (grepl("h", temp) == TRUE) {
+                        index_unit <- 100
+                } else if (grepl("k", temp) == TRUE) {
+                        index_unit <- 1000
+                } else if (grepl("m", temp) == TRUE) {
+                        index_unit <- 1000000
+                } else if (grepl("b", temp) == TRUE) {
+                        index_unit <- 1000000000
+                } else if (grepl("^[+-]", temp) == TRUE) {
+                        index_unit <- 0
+                } else {
+                        index_unit <- strtoi(temp)
+                }
+        }
+        new_storm_data$prop_dmg_unit[i] <- index_unit
+}
+```
+
+### Check data again with new columns
+```{r, echo = TRUE}
+str(new_storm_data)
+head(new_storm_data)
+```
+
+## Results
+
+### Get top 10 most harmful storm events on fatalities
+```{r, echo = TRUE}
+storm_fatalities <- aggregate(FATALITIES ~ EVTYPE, data = new_storm_data, FUN = sum)
+storm_fatalities <- storm_fatalities[order(-storm_fatalities$FATALITIES),]
+
+new_storm_fatalities <- storm_fatalities[1:10, ]
+
+new_storm_fatalities
+```
+
+Tornado and excess heat most of the fatalities.
+
+### Get top 10 most harmful storm events on injuries
+```{r, echo = TRUE}
+storm_injuries <- aggregate(INJURIES ~ EVTYPE, data = new_storm_data, FUN = sum)
+storm_injuries <- storm_injuries[order(-storm_injuries$INJURIES),]
+
+new_storm_injuries <- storm_injuries[1:10,]
+
+new_storm_injuries
+```
+
+Tornado caused siginificant higher injuries than the rest of weather events.
+
+```{r, echo = TRUE}
+plot1 <- ggplot(new_storm_fatalities, aes(x = reorder(EVTYPE, -FATALITIES), y = FATALITIES, fill = EVTYPE)) +
+        geom_bar(stat = "identity") + 
+        theme(legend.position = "none") +
+        theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size =8)) +
+        theme(axis.title.x = element_blank()) +
+        theme(axis.title.y = element_text(face = "bold")) +
+        geom_text(label = new_storm_fatalities$FATALITIES, vjust = -.3, size =3) +
+        ylab("Fatalities") +
+        ggtitle("Top 10 Most Harmful Storm Event Types (Fatalities Vs Injuries)") +
+        scale_y_continuous(limits = c(0, 6000))
+```
+
+```{r, echo = TRUE}
+plot2 <- ggplot(new_storm_injuries, aes(x = reorder(EVTYPE, -INJURIES), y = INJURIES, fill = EVTYPE)) +
+        geom_bar(stat = "identity") + 
+        theme(legend.position = "none") +
+        theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        theme(axis.title.x = element_text(face = "bold")) +
+        theme(axis.title.y = element_text(face = "bold")) +
+        geom_text(label = new_storm_injuries$INJURIES, vjust = -.3, size =3) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size =8)) +
+        xlab("Storm Event Type") + 
+        ylab("Injuries") +
+        scale_y_continuous(limits = c(0, 95000))
+
+grid.arrange(plot1, plot2, nrow =2)
+```
+
+### Get top 10 most harmful storm events on fatalities and injuries combined
+```{r, echo = TRUE}
+new_storm_data$INJU_FATAL <- new_storm_data$INJURIES + new_storm_data$FATALITIES
+
+storm_injuries_fatalities <- aggregate(INJU_FATAL ~ EVTYPE, data = new_storm_data, FUN = sum)
+storm_injuries_fatalities <- storm_injuries_fatalities[order(-storm_injuries_fatalities$INJU_FATAL),]
+
+new_storm_injuries_fatalities <- storm_injuries_fatalities[1:10, ]
+
+new_storm_injuries_fatalities 
+```
+
+By combining fatalites and injuries count, tornado is the most damaging weather event.
+
+```{r, echo = TRUE}
+ggplot(new_storm_injuries_fatalities, aes(x = reorder(EVTYPE, -INJU_FATAL), y = INJU_FATAL, fill = EVTYPE)) +
+        geom_bar(stat = "identity") + 
+        theme(legend.position = "none") +
+        theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        theme(axis.title.x = element_text(face = "bold")) +
+        theme(axis.title.y = element_text(face = "bold")) +
+        geom_text(label = new_storm_injuries_fatalities$INJU_FATAL, vjust = -.3, size =3) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+        xlab("Storm Event Type") + 
+        ylab("Injuries and Fatalities") +
+        ggtitle("Top 10 Most Harmful Storm Event Types")
+```
+
+### Get top 10 most damaging storm events on properties
+```{r, echo = TRUE}
+storm_prop <- aggregate((PROPDMG * prop_dmg_unit) ~ EVTYPE, data = new_storm_data, FUN = sum)
+names(storm_prop) <- c("EVTYPE", "total_prop")
+storm_prop <- storm_prop[order(-storm_prop$total_prop),]
+
+new_storm_prop <- storm_prop[1:10,]
+
+new_storm_prop
+```
+
+Flood caused highest damage on properties.
+
+### Get top 10 most damaging storm events on crops
+```{r, echo = TRUE}
+storm_crop <- aggregate((PROPDMG * crop_dmg_unit) ~ EVTYPE, data = new_storm_data, FUN = sum)
+names(storm_crop) <- c("EVTYPE", "total_crop")
+storm_crop <- storm_crop[order(-storm_crop$total_crop),]
+
+new_storm_crop <- storm_crop[1:10,]
+
+new_storm_crop
+```
+Ice storm caused significant damage on crops compare with other storm events.
+
+```{r, echo = TRUE}
+plot3 <- ggplot(new_storm_prop, aes(x = reorder(EVTYPE, -total_prop), y = total_prop, fill = EVTYPE)) +
+        geom_bar(stat = "identity") + 
+        theme(legend.position = "none") +
+        theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size =6)) +
+        theme(axis.title.x = element_blank()) +
+        theme(axis.title.y = element_text(face = "bold")) +
+        geom_text(label = paste(round(new_storm_prop$total_prop/1000000000, 2), "B"), vjust = -.3, size =3) +
+        ylab("Property Damage") +
+        ggtitle("Top 10 Most Damaging Storm Event Types (Properties and Crops)") +
+        scale_y_continuous(limits = c(0, 154657709800))
+```
+
+```{r, echo = TRUE}
+plot4 <- ggplot(new_storm_crop, aes(x = reorder(EVTYPE, -total_crop), y = total_crop, fill = EVTYPE)) +
+        geom_bar(stat = "identity") + 
+        theme(legend.position = "none") +
+        theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 12)) +
+        theme(axis.title.x = element_text(face = "bold")) +
+        theme(axis.title.y = element_text(face = "bold")) +
+        geom_text(label = paste(round(new_storm_crop$total_crop/1000000000, 2), "B"), vjust = -.3, size =3) +
+        theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size =6)) +
+        xlab("Storm Event Type") + 
+        ylab("Crop Damage") +
+        scale_y_continuous(limits = c(0, 530228721840))
+
+grid.arrange(plot3, plot4, nrow =2)
+```
+
+
+
+
+
+
+
+
